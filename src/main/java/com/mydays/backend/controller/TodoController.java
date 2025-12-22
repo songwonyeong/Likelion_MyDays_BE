@@ -57,6 +57,7 @@ public class TodoController {
     private TodoDtos.Resp toResp(Todo t){
         return TodoDtos.Resp.builder()
                 .id(t.getId())
+                .categoryId(t.getCategory().getId()) // ✅ 추가
                 .category_name(t.getCategory().getName())
                 .category_color(t.getCategory().getColor())
                 .content(t.getContent())

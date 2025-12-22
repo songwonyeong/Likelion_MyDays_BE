@@ -41,7 +41,7 @@ public class TokenIssuer {
                 .setIssuedAt(now)
                 .setExpiration(exp)
                 // jjwt 0.11.x 스타일: Key 또는 byte[] 사용 가능
-                .signWith(SignatureAlgorithm.HS256, key)
+                .signWith(key, SignatureAlgorithm.HS256)
                 .compact();
     }
 }

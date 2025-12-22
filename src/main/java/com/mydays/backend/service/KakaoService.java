@@ -1,5 +1,6 @@
 package com.mydays.backend.service;
 
+import com.mydays.backend.domain.AuthProvider;
 import com.mydays.backend.domain.Member;
 import com.mydays.backend.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +27,6 @@ public class KakaoService {
     private final RestTemplate restTemplate = new RestTemplate();
 
     private final MemberRepository memberRepository;
-    private final TokenService tokenService;
 
     /** 인가코드로 카카오 access_token 교환 */
     public String getAccessToken(String code) {
@@ -37,14 +37,14 @@ public class KakaoService {
         params.add("client_id", clientId.trim());
         params.add("redirect_uri", redirectUri.trim());
         params.add("code", code.trim());
-        // 콘솔에서 Client Secret '사용함'이면 필수
-        if (!clientSecret.isBlank()) {
+
+        // client_secret은 '사용함' 설정인 경우 필수
+        if (clientSecret != null && !clientSecret.isBlank()) {
             params.add("client_secret", clientSecret.trim());
         }
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.valueOf("application/x-www-form-urlencoded;charset=UTF-8"));
-        headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON));
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
 
@@ -52,31 +52,39 @@ public class KakaoService {
             ResponseEntity<Map<String, Object>> res = restTemplate.exchange(
                     url, HttpMethod.POST, request, new ParameterizedTypeReference<Map<String, Object>>() {}
             );
-            Map<String, Object> body = res.getBody();
-            if (body == null || !body.containsKey("access_token")) {
-                throw new IllegalStateException("No access_token in response: " + body);
-            }
-            return String.valueOf(body.get("access_token"));
+
+            Object token = res.getBody() != null ? res.getBody().get("access_token") : null;
+            if (token == null) throw new IllegalStateException("kakao access_token 없음");
+
+            return String.valueOf(token);
+
         } catch (HttpStatusCodeException e) {
-            throw new IllegalStateException("Kakao token error: " + e.getStatusCode() + " " + e.getResponseBodyAsString(), e);
+            throw new IllegalStateException("카카오 토큰 교환 실패: " + e.getResponseBodyAsString(), e);
         }
     }
 
-    /** 카카오 사용자 정보 조회 */
-    public Map<String, Object> getUserInfo(String accessToken) {
+    /** kakao access_token으로 사용자 정보 조회 */
+    public Map<String, Object> getUserInfo(String kakaoAccessToken) {
         String url = "https://kapi.kakao.com/v2/user/me";
+
         HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
+        headers.setBearerAuth(kakaoAccessToken);
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+        HttpEntity<Void> request = new HttpEntity<>(headers);
 
         ResponseEntity<Map<String, Object>> res = restTemplate.exchange(
-                url, HttpMethod.GET, new HttpEntity<>(headers),
-                new ParameterizedTypeReference<Map<String, Object>>() {}
+                url, HttpMethod.GET, request, new ParameterizedTypeReference<Map<String, Object>>() {}
         );
+
         return res.getBody();
     }
 
-    /** kakaoId 기준 업서트 후 우리 서비스 토큰(Access/Refresh) 발급 */
-    public com.mydays.backend.dto.Tokens processUser(Map<String, Object> userInfo) {
+    /**
+     * kakaoId 기준 업서트만 수행하고 Member 반환
+     * (토큰 발급은 Controller에서 RefreshTokenService + TokenIssuer로 단일화)
+     */
+    public Member processUser(Map<String, Object> userInfo) {
         Long kakaoId = Long.valueOf(String.valueOf(userInfo.get("id")));
         @SuppressWarnings("unchecked")
         Map<String, Object> kakaoAccount = (Map<String, Object>) userInfo.get("kakao_account");
@@ -87,31 +95,25 @@ public class KakaoService {
         String nickname = properties != null ? (String) properties.get("nickname") : null;
 
         Member member = memberRepository.findByKakaoId(kakaoId)
-                .map(m -> {
-                    if (nickname != null && !nickname.equals(m.getUsername())) m.setUsername(nickname);
-                    if (email != null && (m.getEmail() == null || !email.equals(m.getEmail()))) m.setEmail(email);
-                    return m;
-                })
                 .orElseGet(() -> Member.builder()
                         .kakaoId(kakaoId)
-                        .email(email)
-                        .username(nickname)
+                        .provider(AuthProvider.KAKAO)
                         .build());
 
-        memberRepository.save(member);
+        // 기존 회원이거나 신규 회원이거나 동일하게 최신 정보로 갱신
+        if (email != null && !email.isBlank()) member.setEmail(email);
+        if (nickname != null && !nickname.isBlank()) member.setUsername(nickname);
 
-        // Access(기본 TTL 사용) + Refresh 발급
-        String access  = tokenService.createAccess(member, 0);
-        String refresh = tokenService.mintRefresh(member, null, null); // UA/IP 필요시 Web 레이어에서 주입
+        // provider는 KAKAO로 고정(로컬 계정과 충돌 방지)
+        member.setProvider(AuthProvider.KAKAO);
 
-        return new com.mydays.backend.dto.Tokens(access, refresh);
+        member = memberRepository.save(member);
+
+        return member;
     }
 
     /** 카카오 계정 로그아웃 URL 생성(옵션) */
     public String buildKakaoLogoutUrl() {
         return "https://kauth.kakao.com/oauth/logout?client_id=" + clientId + "&logout_redirect_uri=" + logoutRedirect;
     }
-
-    // (미사용 예시) 직접 JWT 생성 메서드는 현재 TokenService 사용으로 대체됨.
-    // 필요하면 삭제해도 무방.
 }
