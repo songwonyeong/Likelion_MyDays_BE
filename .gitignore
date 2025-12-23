@@ -35,3 +35,12 @@ out/
 
 ### VS Code ###
 .vscode/
+# secrets / local config
+.env
+.env.*
+src/main/resources/application-local.properties
+src/main/resources/application-prod.properties
+src/main/resources/application.properties
+*.log
+hs_err_pid*.log
+replay_pid*.log
