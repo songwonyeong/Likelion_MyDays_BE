@@ -24,7 +24,7 @@ public class TodoController {
     /** 할일 등록 */
     @PostMapping
     public ResponseEntity<TodoDtos.Resp> create(@CurrentMember Member member,
-                                                @Valid @RequestBody TodoDtos.CreateReq req){
+                                                @Valid @RequestBody TodoDtos.CreateReq req) {
         Todo t = todoService.create(member, req);
         return ResponseEntity.ok(toResp(t));
     }
@@ -33,7 +33,7 @@ public class TodoController {
     @GetMapping
     public ResponseEntity<List<TodoDtos.Resp>> listByDate(@CurrentMember Member member,
                                                           @RequestParam("date")
-                                                          @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date){
+                                                          @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         List<Todo> list = todoService.listByDate(member, date);
         return ResponseEntity.ok(list.stream().map(this::toResp).toList());
     }
@@ -42,22 +42,22 @@ public class TodoController {
     @PatchMapping("/{id}/done")
     public ResponseEntity<TodoDtos.Resp> setDone(@CurrentMember Member member,
                                                  @PathVariable Long id,
-                                                 @Valid @RequestBody TodoDtos.ToggleDoneReq req){
+                                                 @Valid @RequestBody TodoDtos.ToggleDoneReq req) {
         Todo t = todoService.setDone(member, id, req.getDone());
         return ResponseEntity.ok(toResp(t));
     }
 
     /** 할일 삭제 */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@CurrentMember Member member, @PathVariable Long id){
+    public ResponseEntity<Void> delete(@CurrentMember Member member, @PathVariable Long id) {
         todoService.delete(member, id);
         return ResponseEntity.noContent().build();
     }
 
-    private TodoDtos.Resp toResp(Todo t){
+    private TodoDtos.Resp toResp(Todo t) {
         return TodoDtos.Resp.builder()
                 .id(t.getId())
-                .categoryId(t.getCategory().getId()) // ✅ 추가
+                .categoryId(t.getCategory().getId())          // ✅
                 .category_name(t.getCategory().getName())
                 .category_color(t.getCategory().getColor())
                 .content(t.getContent())

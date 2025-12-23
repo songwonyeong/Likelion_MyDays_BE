@@ -1,6 +1,5 @@
 package com.mydays.backend.dto.todo;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
@@ -10,13 +9,12 @@ import java.time.LocalTime;
 
 public class TodoDtos {
 
-    /** 생성 요청: 프론트가 categoryId로 보냄 */
+    /** ✅ 생성 요청: categoryId로 받기 (프론트와 일치) */
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor
     public static class CreateReq {
 
         @NotNull
-        @JsonProperty("categoryId")
-        private Long categoryId;   // ✅ 변경: category_name -> categoryId
+        private Long categoryId;
 
         @NotBlank
         private String content;
@@ -34,8 +32,7 @@ public class TodoDtos {
     public static class Resp {
         private Long id;
 
-        // ✅ 응답은 기존 프론트에서 쓰기 좋게 유지
-        private Long categoryId;
+        private Long categoryId;          // ✅ 추가
         private String category_name;
         private String category_color;
 

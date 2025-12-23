@@ -6,7 +6,6 @@ import com.mydays.backend.domain.Todo;
 import com.mydays.backend.dto.todo.TodoDtos;
 import com.mydays.backend.repository.CategoryRepository;
 import com.mydays.backend.repository.TodoRepository;
-import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,29 +20,20 @@ public class TodoService {
     private final CategoryRepository categoryRepository;
     private final TodoRepository todoRepository;
 
-    // ✅ 핵심: 영속 Member 프록시를 얻기 위해 추가
-    private final EntityManager em;
-
-    private Member managedMember(Member member) {
-        if (member == null || member.getId() == null) {
-            throw new IllegalArgumentException("로그인이 필요합니다.");
-        }
-        // DB hit 없이 프록시(영속 상태) 반환
-        return em.getReference(Member.class, member.getId());
-    }
-
     @Transactional
-    public Todo create(Member member, TodoDtos.CreateReq req){
-        Member m = managedMember(member);
-
+    public Todo create(Member member, TodoDtos.CreateReq req) {
         Category category = categoryRepository.findById(req.getCategoryId())
-                .filter(c -> c.getMember() != null && c.getMember().getId().equals(m.getId()))
                 .orElseThrow(() -> new IllegalArgumentException("카테고리를 찾을 수 없습니다: " + req.getCategoryId()));
+
+        // ✅ (보안/정합성) 내 카테고리인지 확인
+        if (!category.getMember().getId().equals(member.getId())) {
+            throw new IllegalArgumentException("내 카테고리가 아닙니다.");
+        }
 
         boolean done = req.getDone() != null ? req.getDone() : false;
 
         Todo todo = Todo.builder()
-                .member(m)
+                .member(member)
                 .category(category)
                 .content(req.getContent())
                 .done(done)
@@ -54,18 +44,14 @@ public class TodoService {
         return todoRepository.save(todo);
     }
 
-
     @Transactional(readOnly = true)
     public List<Todo> listByDate(Member member, LocalDate date) {
-        Member m = managedMember(member);
-        return todoRepository.findAllByMemberAndScheduledDateOrderByScheduledTimeAscIdAsc(m, date);
+        return todoRepository.findAllByMemberAndScheduledDateOrderByScheduledTimeAscIdAsc(member, date);
     }
 
     @Transactional
     public Todo setDone(Member member, Long todoId, boolean done) {
-        Member m = managedMember(member);
-
-        Todo t = todoRepository.findByIdAndMember(todoId, m)
+        Todo t = todoRepository.findByIdAndMember(todoId, member)
                 .orElseThrow(() -> new IllegalArgumentException("할일을 찾을 수 없습니다."));
         t.setDone(done);
         return t;
@@ -73,9 +59,7 @@ public class TodoService {
 
     @Transactional
     public void delete(Member member, Long todoId) {
-        Member m = managedMember(member);
-
-        Todo t = todoRepository.findByIdAndMember(todoId, m)
+        Todo t = todoRepository.findByIdAndMember(todoId, member)
                 .orElseThrow(() -> new IllegalArgumentException("할일을 찾을 수 없습니다."));
         todoRepository.delete(t);
     }
