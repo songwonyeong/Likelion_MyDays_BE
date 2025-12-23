@@ -27,13 +27,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 3️⃣ gradlew 실행 권한 (backend 기준)
+      # 3️⃣ gradlew 실행 권한 (레포 루트 기준)
       - name: Grant execute permission for gradlew
-        run: chmod +x backend/gradlew
+        run: chmod +x gradlew
 
       # 4️⃣ Gradle 빌드 (bootJar)
       - name: Build with Gradle (bootJar)
-        working-directory: backend
         run: ./gradlew clean bootJar -x test
 
       # 5️⃣ 산출물 업로드
@@ -41,7 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: java-app
-          path: backend/build/libs/*.jar
+          path: build/libs/*.jar
 
   deploy:
     runs-on: ubuntu-latest
