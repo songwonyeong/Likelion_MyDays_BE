@@ -18,7 +18,7 @@ import java.util.Date;
 public class EmailVerificationService {
 
     private final EmailVerificationRepository repo;
-    private final MailSenderService mail;
+    private final Optional<MailSenderService> mail;   // ✅ Optional 주입
     private final byte[] emailJwtSecret;
     private final int codeTtlMinutes;
     private final int emailJwtTtlMinutes;
@@ -27,7 +27,7 @@ public class EmailVerificationService {
 
     public EmailVerificationService(
             EmailVerificationRepository repo,
-            MailSenderService mail,
+            Optional<MailSenderService> mail,          // ✅ Optional
             @Value("${signup.email.jwt.secret}") String jwtSecret,
             @Value("${signup.email.code.ttl-minutes:10}") int codeTtlMinutes,
             @Value("${signup.email.jwt.ttl-minutes:15}") int emailJwtTtlMinutes,
@@ -41,37 +41,61 @@ public class EmailVerificationService {
         this.maxAttempts = maxAttempts;
     }
 
+    /**
+     * 인증 코드 요청 (메일 발송)
+     */
     @Transactional
     public void requestCode(String email) {
+
+        // ✅ mail.enabled=false 상태면 여기서만 예외
+        MailSenderService sender = mail.orElseThrow(
+                () -> new IllegalStateException(
+                        "현재 이메일 발송 기능이 비활성화되어 있습니다. (mail.enabled=false)"
+                )
+        );
+
         String code = generate6Digit();
         String hash = SecurityCryptoConfig.bcrypt(code);
 
-        // 🔁 세터 대신 빌더로 새 레코드 생성
         EmailVerification ev = EmailVerification.builder()
                 .email(email)
                 .codeHash(hash)
                 .expiresAt(LocalDateTime.now().plusMinutes(codeTtlMinutes))
-                .used(false)        // 엔티티에 필드가 있다면 명시
-                .attempts(0)        // 엔티티에 필드가 있다면 명시
+                .used(false)
+                .attempts(0)
                 .build();
 
         repo.save(ev);
 
         // 메일 발송
-        mail.sendVerificationCode(email, code);
+        sender.sendVerificationCode(email, code);
     }
 
+    /**
+     * 인증 코드 검증 + 이메일 JWT 발급
+     */
     @Transactional
     public String verifyCodeAndIssueEmailJwt(String email, String code) {
-        Optional<EmailVerification> opt = repo.findTopByEmailAndUsedIsFalseOrderByIdDesc(email);
-        EmailVerification ev = opt.orElseThrow(() -> new IllegalArgumentException("먼저 인증코드를 요청해주세요."));
+        Optional<EmailVerification> opt =
+                repo.findTopByEmailAndUsedIsFalseOrderByIdDesc(email);
 
-        if (ev.isExpired()) throw new IllegalStateException("인증코드가 만료됐습니다. 다시 요청해주세요.");
-        if (ev.getAttempts() >= maxAttempts) throw new IllegalStateException("인증 시도 횟수를 초과했습니다. 다시 요청해주세요.");
+        EmailVerification ev = opt.orElseThrow(
+                () -> new IllegalArgumentException("먼저 인증코드를 요청해주세요.")
+        );
+
+        if (ev.isExpired()) {
+            throw new IllegalStateException("인증코드가 만료됐습니다. 다시 요청해주세요.");
+        }
+
+        if (ev.getAttempts() >= maxAttempts) {
+            throw new IllegalStateException("인증 시도 횟수를 초과했습니다. 다시 요청해주세요.");
+        }
 
         ev.increaseAttempts();
 
-        boolean matched = SecurityCryptoConfig.bcryptMatches(code, ev.getCodeHash());
+        boolean matched =
+                SecurityCryptoConfig.bcryptMatches(code, ev.getCodeHash());
+
         if (!matched) {
             repo.save(ev);
             throw new IllegalArgumentException("인증코드가 올바르지 않습니다.");
@@ -81,7 +105,8 @@ public class EmailVerificationService {
         repo.save(ev);
 
         Date now = new Date();
-        Date exp = new Date(now.getTime() + emailJwtTtlMinutes * 60L * 1000L);
+        Date exp =
+                new Date(now.getTime() + emailJwtTtlMinutes * 60L * 1000L);
 
         return Jwts.builder()
                 .setSubject(email)
@@ -91,6 +116,9 @@ public class EmailVerificationService {
                 .compact();
     }
 
+    /**
+     * 이메일 JWT에서 이메일 추출
+     */
     public String parseEmailFromEmailJwt(String jwt) {
         return Jwts.parser()
                 .setSigningKey(emailJwtSecret)
