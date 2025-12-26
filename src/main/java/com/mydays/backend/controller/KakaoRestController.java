@@ -25,7 +25,12 @@ public class KakaoRestController {
     private final KakaoService kakaoService;
     private final RefreshTokenService refreshTokenService;
 
-    @Value("${frontend.redirect-uri:http://localhost:3000/main}")
+    /**
+     * ✅ 프론트 리다이렉트 목적지
+     * - Azure App Service 환경변수 FRONTEND_REDIRECT_URI 로 운영/배포값 주입
+     * - 없으면 기본값 localhost로 fallback
+     */
+    @Value("${frontend.redirect-uri:${FRONTEND_REDIRECT_URI:http://localhost:3000/main}}")
     private String frontendRedirectUri;
 
     @Value("${refresh.cookie.name:refresh_token}") private String refreshCookieName;
@@ -120,10 +125,15 @@ public class KakaoRestController {
         res.addCookie(c);
 
         // SameSite 보완 헤더 (브라우저별 대응)
-        String header = String.format("%s=%s; Max-Age=%d; Path=%s; %s; HttpOnly; SameSite=%s",
+        String secureAttr = refreshCookieSecure ? "Secure; " : "";
+        String sameSite = StringUtils.hasText(refreshCookieSameSite) ? refreshCookieSameSite : "Lax";
+
+        String header = String.format(
+                "%s=%s; Max-Age=%d; Path=%s; %sHttpOnly; SameSite=%s",
                 refreshCookieName, refresh, maxAgeSec, c.getPath(),
-                refreshCookieSecure ? "Secure" : "",
-                StringUtils.hasText(refreshCookieSameSite) ? refreshCookieSameSite : "Lax");
+                secureAttr,
+                sameSite
+        );
         res.addHeader("Set-Cookie", header);
     }
 }
