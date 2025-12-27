@@ -26,24 +26,43 @@ public class KakaoRestController {
     private final RefreshTokenService refreshTokenService;
 
     /**
-     * ✅ 프론트 리다이렉트 목적지
-     * - Azure App Service 환경변수 FRONTEND_REDIRECT_URI 로 운영/배포값 주입
-     * - 없으면 기본값 localhost로 fallback
+     * ✅ 프론트 리다이렉트 목적지 (로그인 성공 후 이동)
+     * - Azure: FRONTEND_REDIRECT_URI 로 주입 (예: https://likelion-my-days-fe.vercel.app/main)
+     * - 없으면 로컬 기본값으로 fallback
      */
     @Value("${frontend.redirect-uri:${FRONTEND_REDIRECT_URI:http://localhost:3000/main}}")
     private String frontendRedirectUri;
 
     @Value("${refresh.cookie.name:refresh_token}") private String refreshCookieName;
-    @Value("${refresh.cookie.secure:false}") private boolean refreshCookieSecure;
+
+    /**
+     * ✅ 배포에서는 true 권장 (https + cross-site 쿠키)
+     * Azure 환경변수: REFRESH_COOKIE_SECURE=true
+     */
+    @Value("${refresh.cookie.secure:${REFRESH_COOKIE_SECURE:false}}")
+    private boolean refreshCookieSecure;
+
     @Value("${refresh.cookie.path:/}") private String refreshCookiePath;
-    @Value("${refresh.cookie.same-site:Lax}") private String refreshCookieSameSite;
+
+    /**
+     * ✅ 배포(Vercel <-> Azure)면 None 권장
+     * Azure 환경변수: REFRESH_COOKIE_SAME_SITE=None
+     */
+    @Value("${refresh.cookie.same-site:${REFRESH_COOKIE_SAME_SITE:Lax}}")
+    private String refreshCookieSameSite;
+
     @Value("${refresh.ttl-days:30}") private int refreshTtlDays;
 
     /**
-     * ✅ 카카오 로그인 콜백:
+     * ✅ 카카오 로그인 콜백 (백엔드 인가 방식)
+     * - 카카오에서 code를 받음
      * - Member upsert
      * - refresh 발급해서 HttpOnly 쿠키로 내려줌
-     * - access 발급/갱신은 무조건 POST /auth/token/refresh 로 통일
+     * - 프론트로 이동 (frontendRedirectUri)
+     *
+     * 중요: 카카오 개발자 콘솔 Redirect URI에
+     *  - https://<AZURE_BACKEND>/kakao/callback
+     * 가 등록되어 있어야 함.
      */
     @GetMapping("/callback")
     public ResponseEntity<?> callback(@RequestParam("code") String code,
@@ -73,14 +92,9 @@ public class KakaoRestController {
     }
 
     // =========================
-    // 🔥 완전 통합: 더 이상 사용하지 않는 kakao 토큰 엔드포인트
+    // 🔥 더 이상 사용하지 않는 kakao 토큰 엔드포인트 (호환용)
     // =========================
 
-    /**
-     * ✅ (권장) 410 Gone: 이제 refresh는 /auth/token/refresh만 사용
-     * - 프론트가 실수로 호출해도 "어디로 바꿔야 하는지" 즉시 알 수 있게 함
-     * - 프론트 전환 끝나면 이 메서드 자체를 삭제해도 됨(404로)
-     */
     @PostMapping("/auth/refresh")
     public ResponseEntity<?> deprecatedKakaoRefresh() {
         return ResponseEntity.status(HttpStatus.GONE).body(Map.of(
@@ -124,15 +138,14 @@ public class KakaoRestController {
         c.setMaxAge(maxAgeSec);
         res.addCookie(c);
 
-        // SameSite 보완 헤더 (브라우저별 대응)
-        String secureAttr = refreshCookieSecure ? "Secure; " : "";
+        // SameSite 보완 헤더
         String sameSite = StringUtils.hasText(refreshCookieSameSite) ? refreshCookieSameSite : "Lax";
+        String secure = refreshCookieSecure ? "Secure; " : "";
 
         String header = String.format(
                 "%s=%s; Max-Age=%d; Path=%s; %sHttpOnly; SameSite=%s",
-                refreshCookieName, refresh, maxAgeSec, c.getPath(),
-                secureAttr,
-                sameSite
+                refreshCookieName, refresh, maxAgeSec, refreshCookiePath,
+                secure, sameSite
         );
         res.addHeader("Set-Cookie", header);
     }
